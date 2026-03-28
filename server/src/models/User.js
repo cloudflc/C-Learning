@@ -22,6 +22,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ['student', 'teacher', 'admin'], default: 'student' },
   exp: { type: Number, default: 0 },
   rank: { type: String, default: 'Bronze' },
+  coins: { type: Number, default: 0 },
   lastActiveDate: { type: Date, default: Date.now },
   consecutiveDays: { type: Number, default: 0 },
   totalExercises: { type: Number, default: 0 },

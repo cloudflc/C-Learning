@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useTypingStore, useAuthStore } from '../stores';
+import { useTypingStore, useAuthStore, useLevelStore } from '../stores';
 import ReactMarkdown from 'react-markdown';
 import { ArrowLeft, Heart, Clock, Send, RefreshCw, Lock, Check, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -11,6 +11,7 @@ const TypingExercise = () => {
   const navigate = useNavigate();
   const { currentExercise, exerciseProgress, startExercise, submitLine, resetProgress, isLoading } = useTypingStore();
   const { updateUser } = useAuthStore();
+  const { fetchLevels } = useLevelStore();
   
   const [userInput, setUserInput] = useState('');
   const [hp, setHp] = useState(3);
@@ -33,14 +34,16 @@ const TypingExercise = () => {
         setTimeLeft(data.exercise.timeLimit || 0);
         if (data.result?.isCompleted) {
           setResult({ isCompleted: true, completedLines: data.result.totalLines });
-          setIsStarted(false);
-        } else {
-          setIsStarted(true);
-          setStartTime(Date.now());
         }
+        setIsStarted(false);
       }
     });
   }, [id]);
+
+  useEffect(() => {
+    console.log('=== exerciseProgress CHANGED ===');
+    console.log('exerciseProgress:', exerciseProgress);
+  }, [exerciseProgress]);
 
   useEffect(() => {
     if (isStarted && timeLeft > 0 && currentExercise?.timeLimit > 0) {
@@ -75,25 +78,63 @@ const TypingExercise = () => {
   };
 
   const handleSubmit = async () => {
-    if (isSubmitting || !isStarted || !currentExercise) return;
+    console.log('=== HANDLE SUBMIT CALLED ===');
+    console.log('isSubmitting:', isSubmitting);
+    console.log('isStarted:', isStarted);
+    console.log('currentExercise:', !!currentExercise);
+    console.log('hp:', hp);
+    console.log('userInput:', userInput);
+    console.log('exerciseProgress:', exerciseProgress);
+    
+    if (isSubmitting || !isStarted || !currentExercise) {
+      console.log('EARLY RETURN: isSubmitting || !isStarted || !currentExercise');
+      return;
+    }
     if (hp <= 0) {
+      console.log('EARLY RETURN: hp <= 0');
       toast.error('生命值已耗尽，请重新开始');
       return;
     }
     
     const currentLine = (exerciseProgress?.completedLines || 0) + 1;
-    if (currentLine > currentExercise.questions?.length) return;
+    console.log('currentLine to submit:', currentLine);
+    console.log('totalLines:', currentExercise.questions?.length);
+    if (currentLine > currentExercise.questions?.length) {
+      console.log('EARLY RETURN: currentLine > questions.length');
+      return;
+    }
 
     setIsSubmitting(true);
     
     try {
       const timeSpent = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
+      console.log('=== SUBMITTING ===');
+      console.log('lineNumber:', currentLine);
+      console.log('submittedContent:', userInput);
+      console.log('submittedContent length:', userInput.length);
+      console.log('hpRemaining:', hp);
+      console.log('timeSpent:', timeSpent);
+      
       const response = await submitLine(id, {
         lineNumber: currentLine,
         submittedContent: userInput,
         hpRemaining: hp,
         timeSpent
       });
+
+      console.log('=== RESPONSE RECEIVED ===');
+      console.log('Full response:', response);
+      console.log('response.isCorrect:', response.isCorrect);
+      console.log('response.isCompleted:', response.isCompleted);
+      console.log('response.completedLines:', response.completedLines);
+      console.log('response.totalLines:', response.totalLines);
+      console.log('response.expEarned:', response.expEarned);
+      console.log('response.hpRemaining:', response.hpRemaining);
+      console.log('response.correctAnswer:', response.correctAnswer);
+      console.log('response.message:', response.message);
+      console.log('response.coinsEarned:', response.coinsEarned);
+      console.log('response.isNewRecord:', response.isNewRecord);
+      console.log('response.isFirstCompletion:', response.isFirstCompletion);
 
       if (response.isCorrect) {
         setResult({
@@ -103,8 +144,20 @@ const TypingExercise = () => {
           expEarned: response.expEarned
         });
         
+        fetchLevels();
+        
         if (response.isCompleted) {
-          toast.success(`恭喜完成全部题目！获得 ${response.expEarned} 经验值！`);
+          let completionMessage = `恭喜完成全部题目！获得 ${response.expEarned} 经验值！`;
+          
+          if (response.coinsEarned > 0) {
+            completionMessage += ` +${response.coinsEarned} 金币！`;
+          }
+          
+          if (response.isNewRecord) {
+            completionMessage += ' 🏆 打破纪录！';
+          }
+          
+          toast.success(completionMessage);
           setIsStarted(false);
         } else {
           toast.success('正确！进入下一行');
@@ -117,7 +170,7 @@ const TypingExercise = () => {
         if (response.hpRemaining <= 0) {
           setHp(0);
           toast.error('生命值耗尽，挑战失败');
-          setResult({ isCompleted: false, message: '生命值耗尽，挑战失败' });
+          setResult({ isCompleted: false, message: '生命值耗尽，挑战失败', completedLines: 0 });
           setCorrectAnswer(response.correctAnswer || '');
           setShowCorrectAnswer(true);
           setIsStarted(false);
@@ -130,13 +183,17 @@ const TypingExercise = () => {
         }
       }
     } catch (error) {
+      console.error('=== SUBMIT ERROR ===');
+      console.error('Error:', error);
+      console.error('Response data:', error.response?.data);
+      console.error('Response status:', error.response?.status);
       toast.error('提交失败，请重试');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleRetry = () => {
+  const handleRetry = async () => {
     resetProgress();
     setUserInput('');
     setResult(null);
@@ -144,9 +201,15 @@ const TypingExercise = () => {
     setCorrectAnswer('');
     setHp(currentExercise?.initialHp || 3);
     setTimeLeft(currentExercise?.timeLimit || 0);
-    setIsStarted(true);
-    setStartTime(Date.now());
+    setIsStarted(false);
+    setStartTime(null);
     setIsSubmitting(false);
+    
+    const data = await startExercise(id);
+    if (data.exercise) {
+      setHp(data.exercise.initialHp || 3);
+      setTimeLeft(data.exercise.timeLimit || 0);
+    }
   };
 
   if (isLoading || !currentExercise) {
@@ -157,10 +220,20 @@ const TypingExercise = () => {
     );
   }
 
-  const currentLine = (exerciseProgress?.completedLines || result?.completedLines || 0) + 1;
   const totalLines = currentExercise.questions?.length || 0;
+  const baseCompletedLines = exerciseProgress?.completedLines ?? result?.completedLines ?? 0;
+  const currentLine = baseCompletedLines >= totalLines ? 1 : baseCompletedLines + 1;
   const isLineUnlocked = (lineNum) => lineNum <= currentLine;
   const currentQuestion = currentExercise.questions?.find(q => q.lineNumber === currentLine);
+
+  console.log('=== TypingExercise Render ===');
+  console.log('exerciseProgress:', exerciseProgress);
+  console.log('result:', result);
+  console.log('currentLine:', currentLine);
+  console.log('totalLines:', totalLines);
+  console.log('currentQuestion:', currentQuestion);
+  console.log('isStarted:', isStarted);
+  console.log('currentExercise.questions:', currentExercise.questions);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -201,7 +274,7 @@ const TypingExercise = () => {
               </div>
             )}
 
-            {!isStarted && !result?.isCompleted && (
+            {!isStarted && !result?.isCompleted && !result?.message && (
               <button
                 onClick={handleStart}
                 className="btn-primary w-full py-3 text-lg"
@@ -217,6 +290,18 @@ const TypingExercise = () => {
                   获得经验值：+{result.expEarned} EXP<br/>
                   用时：{Math.floor((Date.now() - startTime) / 1000)} 秒
                 </div>
+                {result.coinsEarned > 0 && (
+                  <div className="mt-2 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
+                    <div className="text-yellow-400 font-bold">💰 获得金币</div>
+                    <div className="text-slate-300 text-sm">+{result.coinsEarned} 金币</div>
+                  </div>
+                )}
+                {result.isNewRecord && (
+                  <div className="mt-2 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
+                    <div className="text-yellow-400 font-bold">🏆 打破纪录！</div>
+                    <div className="text-slate-300 text-sm">新纪录：{result.timeSpent} 秒</div>
+                  </div>
+                )}
                 <button
                   onClick={handleRetry}
                   className="btn-secondary mt-4 w-full"
@@ -229,11 +314,17 @@ const TypingExercise = () => {
             {result?.message && !result?.isCompleted && (
               <div className="p-4 bg-red-500/20 border border-red-500/30 rounded-lg">
                 <div className="text-red-400 font-bold">{result.message}</div>
+                {showCorrectAnswer && correctAnswer && (
+                  <div className="mt-3 p-3 bg-slate-800 rounded-lg">
+                    <div className="text-yellow-400 text-sm font-medium mb-1">正确答案：</div>
+                    <pre className="text-green-300 font-mono text-sm whitespace-pre-wrap">{correctAnswer}</pre>
+                  </div>
+                )}
                 <button
                   onClick={handleRetry}
                   className="btn-secondary mt-4 w-full"
                 >
-                  重新开始
+                  重新挑战
                 </button>
               </div>
             )}
@@ -264,6 +355,8 @@ const TypingExercise = () => {
                   ref={inputRef}
                   value={userInput}
                   onChange={(e) => {
+                    console.log('=== INPUT CHANGE ===');
+                    console.log('value:', e.target.value);
                     setUserInput(e.target.value);
                     if (showCorrectAnswer) {
                       setShowCorrectAnswer(false);
@@ -271,6 +364,7 @@ const TypingExercise = () => {
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
+                      console.log('=== ENTER KEY PRESSED ===');
                       e.preventDefault();
                       handleSubmit();
                     }

@@ -92,4 +92,10 @@ export const usersAPI = {
   updateStudentLevelStatus: (id, data) => api.put(`/users/${id}/level-status`, data)
 };
 
+export const shopAPI = {
+  getItems: () => api.get('/shop/items'),
+  purchaseItem: (itemId) => api.post(`/shop/purchase/${itemId}`),
+  getPurchases: () => api.get('/shop/purchases')
+};
+
 export default api;

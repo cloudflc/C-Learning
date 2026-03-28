@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores';
-import { Home, Map, Trophy, User, Settings, LogOut, Menu, X, Code } from 'lucide-react';
+import { Home, Map, Trophy, User, Settings, LogOut, Menu, X, Code, Coins, ShoppingCart } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
 
@@ -53,6 +53,7 @@ const Layout = () => {
           <NavItem to="/" icon={Home}>首页</NavItem>
           <NavItem to="/levels" icon={Map}>关卡</NavItem>
           <NavItem to="/rankings" icon={Trophy}>排行榜</NavItem>
+          <NavItem to="/shop" icon={ShoppingCart}>商城</NavItem>
         </nav>
         
         <div className="p-4 border-t border-slate-700">
@@ -66,7 +67,13 @@ const Layout = () => {
                   <span>{getRankIcon(user.rank)}</span>
                   <span className="text-white font-medium truncate">{user.username}</span>
                 </div>
-                <div className="text-xs text-slate-400">EXP: {user.exp}</div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-400">EXP: {user.exp}</span>
+                  <span className="text-yellow-400 flex items-center gap-1">
+                    <Coins size={12} />
+                    {user.coins || 0}
+                  </span>
+                </div>
               </div>
             </div>
           )}

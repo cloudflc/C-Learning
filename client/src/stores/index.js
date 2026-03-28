@@ -151,18 +151,39 @@ export const useTypingStore = create((set, get) => ({
   
   submitLine: async (id, data) => {
     try {
+      console.log('=== STORE submitLine START ===');
+      console.log('id:', id);
+      console.log('data:', data);
+      
       const response = await api.post(`/typing/${id}/submit-line`, data);
+      console.log('=== STORE submitLine RESPONSE ===');
+      console.log('API response:', response);
+      console.log('response.data:', response.data);
+      console.log('response.status:', response.status);
+      
       set({ 
         exerciseProgress: {
-          completedLines: response.data.completedLines,
-          totalLines: response.data.totalLines,
-          isCompleted: response.data.isCompleted,
-          expEarned: response.data.expEarned
+          completedLines: response.data.completedLines ?? 0,
+          totalLines: response.data.totalLines ?? 0,
+          isCompleted: response.data.isCompleted ?? false,
+          expEarned: response.data.expEarned ?? 0
         }
       });
+      
+      console.log('=== STORE exerciseProgress UPDATED ===');
+      console.log('New exerciseProgress:', {
+        completedLines: response.data.completedLines ?? 0,
+        totalLines: response.data.totalLines ?? 0,
+        isCompleted: response.data.isCompleted ?? false,
+        expEarned: response.data.expEarned ?? 0
+      });
+      
       return response.data;
     } catch (error) {
-      console.error('Failed to submit line:', error);
+      console.error('=== STORE submitLine ERROR ===');
+      console.error('Error:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
       throw error;
     }
   },
@@ -232,6 +253,48 @@ export const useOJStore = create((set, get) => ({
       set({ submissions: response.data });
     } catch (error) {
       console.error('Failed to fetch submissions:', error);
+    }
+  }
+}));
+
+export const useShopStore = create((set, get) => ({
+  items: [],
+  purchases: [],
+  isLoading: false,
+  
+  fetchItems: async () => {
+    set({ isLoading: true });
+    try {
+      const response = await api.get('/shop/items');
+      set({ items: response.data, isLoading: false });
+    } catch (error) {
+      set({ isLoading: false });
+      console.error('Failed to fetch shop items:', error);
+    }
+  },
+  
+  purchaseItem: async (itemId) => {
+    try {
+      const response = await api.post(`/shop/purchase/${itemId}`);
+      set({ 
+        purchases: [...get().purchases, response.data],
+        items: get().items.map(item => 
+          item._id === itemId ? { ...item, stock: item.stock - 1 } : item
+        )
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to purchase item:', error);
+      throw error;
+    }
+  },
+  
+  fetchPurchases: async () => {
+    try {
+      const response = await api.get('/shop/purchases');
+      set({ purchases: response.data });
+    } catch (error) {
+      console.error('Failed to fetch purchases:', error);
     }
   }
 }));

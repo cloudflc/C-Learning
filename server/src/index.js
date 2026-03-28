@@ -11,6 +11,8 @@ const typingRoutes = require('./routes/typing');
 const ojRoutes = require('./routes/oj');
 const rankingRoutes = require('./routes/ranking');
 const achievementRoutes = require('./routes/achievements');
+const shopRoutes = require('./routes/shop');
+const rewardRoutes = require('./routes/rewards');
 const { initRedis } = require('./config/redis');
 const { expDecayJob } = require('./jobs/expDecay');
 
@@ -27,6 +29,8 @@ app.use('/api/typing', typingRoutes);
 app.use('/api/oj', ojRoutes);
 app.use('/api/ranking', rankingRoutes);
 app.use('/api/achievements', achievementRoutes);
+app.use('/api/shop', shopRoutes);
+app.use('/api/rewards', rewardRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date() });

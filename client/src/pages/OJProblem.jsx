@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useOJStore, useAuthStore } from '../stores';
+import { useOJStore, useAuthStore, useLevelStore } from '../stores';
 import ReactMarkdown from 'react-markdown';
 import { ArrowLeft, Send, FileText, Play, Check, X, Clock, MemoryStick, Terminal, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
@@ -14,6 +14,7 @@ const OJProblem = () => {
   const navigate = useNavigate();
   const { currentProblem, fetchProblem, submitCode, runCode, submissions, fetchSubmissions, isLoading } = useOJStore();
   const { updateUser } = useAuthStore();
+  const { fetchLevels } = useLevelStore();
   
   const [code, setCode] = useState(`#include <iostream>
 using namespace std;
@@ -54,7 +55,19 @@ int main() {
             
             if (updated.status === 'accepted') {
               toast.success(`恭喜！获得 ${updated.expEarned || currentProblem?.expReward || 20} 经验值！`);
-              updateUser({ exp: updated.totalExp, rank: updated.currentRank });
+              
+              if (updated.totalExp !== undefined || updated.currentRank !== undefined) {
+                updateUser({ exp: updated.totalExp, rank: updated.currentRank });
+              } else {
+                try {
+                  const userRes = await api.get('/auth/me');
+                  updateUser(userRes.data);
+                } catch (error) {
+                  console.error('Failed to fetch user info:', error);
+                }
+              }
+              
+              fetchLevels();
             } else if (updated.status === 'compile_error') {
               toast.error('编译错误！请检查代码');
             } else if (updated.status === 'wrong_answer') {
@@ -74,7 +87,7 @@ int main() {
       
       return () => clearInterval(interval);
     }
-  }, [currentSubmission]);
+  }, [currentSubmission, id]);
 
   const addTerminalLine = (text, type = 'output') => {
     setTerminalLines(prev => [...prev, { text, type }]);
@@ -91,14 +104,15 @@ int main() {
     setCurrentSubmission(null);
     try {
       const response = await submitCode(id, { code, language: 'cpp' });
-      setCurrentSubmission(response.submissionId ? { _id: response.submissionId, status: 'pending' } : response);
       
-      if (response.status === 'accepted') {
+      if (response.submissionId) {
+        setCurrentSubmission({ _id: response.submissionId, status: 'pending' });
+        toast.success('代码已提交，正在判题...');
+      } else if (response.status === 'accepted') {
         toast.success(`恭喜！获得 ${response.expEarned || currentProblem.expReward} 经验值！`);
         updateUser({ exp: response.totalExp, rank: response.currentRank });
         fetchSubmissions(id);
-      } else if (response.status === 'pending') {
-        toast.success('代码已提交，正在判题...');
+        fetchLevels();
       } else {
         toast.error('提交失败，请检查代码');
       }
@@ -375,6 +389,9 @@ int main() {
                 onChange={(value) => setCode(value)}
                 theme="dark"
                 className="text-base"
+                basicSetup={{
+                  spellcheck: false
+                }}
               />
             </div>
 

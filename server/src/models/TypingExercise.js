@@ -31,7 +31,12 @@ const typingResultSchema = new mongoose.Schema({
   totalLines: { type: Number, default: 0 },
   isCompleted: { type: Boolean, default: false },
   timeSpent: { type: Number },
-  expEarned: { type: Number }
+  expEarned: { type: Number },
+  bestTimes: [{ type: Number }],
+  totalAttempts: { type: Number, default: 0 },
+  successfulAttempts: { type: Number, default: 0 },
+  lastAttemptTime: { type: Date },
+  totalTimeSpent: { type: Number, default: 0 }
 }, { timestamps: true });
 
 module.exports = {

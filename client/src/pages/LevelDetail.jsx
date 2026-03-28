@@ -14,6 +14,15 @@ const LevelDetail = () => {
     fetchLevel(id);
   }, [id]);
 
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchLevel(id);
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [id, fetchLevel]);
+
   const handleStart = async () => {
     if (!currentLevel?.isUnlocked) {
       toast.error('关卡未解锁');
@@ -146,6 +155,12 @@ const LevelDetail = () => {
               </div>
               
               <div className="flex items-center gap-4">
+                {exercise.coinsReward > 0 && (
+                  <div className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-500/20 text-yellow-400 text-sm">
+                    <span>💰</span>
+                    <span>+{exercise.coinsReward}</span>
+                  </div>
+                )}
                 {exercise.status !== 'locked' && exercise.progress > 0 && (
                   <div className="w-24">
                     <div className="exp-bar">

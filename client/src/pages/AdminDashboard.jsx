@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { levelsAPI, typingAPI, ojAPI, usersAPI } from '../services/api';
+import api from '../services/api';
 import {
   Plus, Trash2, Edit, Keyboard, Code, Settings, Users,
-  ChevronRight, Save, X, Search, FolderPlus, UserPlus, Lock, Unlock, CheckCircle
+  ChevronRight, Save, X, Search, FolderPlus, UserPlus, Lock, Unlock, CheckCircle, Gift
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -17,7 +18,7 @@ const AdminDashboard = () => {
         <p className="text-slate-400">管理关卡、练习和系统配置</p>
       </div>
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 flex-wrap">
         <button
           onClick={() => setActiveTab('levels')}
           className={clsx(
@@ -66,12 +67,25 @@ const AdminDashboard = () => {
           <Users size={18} />
           学生管理
         </button>
+        <button
+          onClick={() => setActiveTab('rewards')}
+          className={clsx(
+            'px-4 py-2 rounded-lg flex items-center gap-2 transition-colors',
+            activeTab === 'rewards'
+              ? 'bg-primary-500/20 text-primary-400'
+              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+          )}
+        >
+          <Gift size={18} />
+          奖励配置
+        </button>
       </div>
 
       {activeTab === 'levels' && <LevelManagement />}
       {activeTab === 'typing' && <TypingManagement />}
       {activeTab === 'oj' && <OJManagement />}
       {activeTab === 'students' && <StudentManagement />}
+      {activeTab === 'rewards' && <RewardManagement />}
     </div>
   );
 };
@@ -1487,6 +1501,380 @@ const StudentManagement = () => {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+const RewardManagement = () => {
+  const [rewards, setRewards] = useState([]);
+  const [typingExercises, setTypingExercises] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingReward, setEditingReward] = useState(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    type: 'exercise_completion',
+    exerciseId: '',
+    coinsReward: 0,
+    isActive: true,
+    isRepeatable: false,
+    condition: {
+      minAttempts: 0,
+      maxTime: null
+    }
+  });
+
+  useEffect(() => {
+    loadRewards();
+    loadExercises();
+  }, []);
+
+  const loadRewards = async () => {
+    try {
+      const res = await api.get('/rewards');
+      setRewards(res.data);
+    } catch (error) {
+      toast.error('加载奖励失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadExercises = async () => {
+    try {
+      const res = await api.get('/typing');
+      setTypingExercises(res.data.exercises);
+    } catch (error) {
+      console.error('加载练习失败', error);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingReward) {
+        await api.put(`/rewards/${editingReward._id}`, formData);
+        toast.success('奖励更新成功');
+      } else {
+        await api.post('/rewards', formData);
+        toast.success('奖励创建成功');
+      }
+      setShowForm(false);
+      setEditingReward(null);
+      setFormData({
+        name: '',
+        description: '',
+        type: 'exercise_completion',
+        exerciseId: '',
+        coinsReward: 0,
+        isActive: true,
+        isRepeatable: false,
+        condition: {
+          minAttempts: 0,
+          maxTime: null
+        }
+      });
+      loadRewards();
+    } catch (error) {
+      toast.error(error.response?.data?.message || '操作失败');
+    }
+  };
+
+  const handleEdit = (reward) => {
+    setEditingReward(reward);
+    setFormData({
+      name: reward.name,
+      description: reward.description || '',
+      type: reward.type,
+      exerciseId: reward.exerciseId?._id || '',
+      coinsReward: reward.coinsReward,
+      isActive: reward.isActive,
+      isRepeatable: reward.isRepeatable,
+      condition: reward.condition || {
+        minAttempts: 0,
+        maxTime: null
+      }
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('确定要删除这个奖励吗？')) return;
+    try {
+      await api.delete(`/rewards/${id}`);
+      toast.success('奖励删除成功');
+      loadRewards();
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
+
+  const handleToggle = async (id) => {
+    try {
+      await api.post(`/rewards/${id}/toggle`);
+      toast.success('状态更新成功');
+      loadRewards();
+    } catch (error) {
+      toast.error('更新失败');
+    }
+  };
+
+  const getTypeName = (type) => {
+    const typeNames = {
+      'exercise_completion': '完成练习奖励',
+      'record_break': '打破纪录奖励',
+      'first_completion': '首次完成奖励',
+      'achievement': '成就奖励'
+    };
+    return typeNames[type] || type;
+  };
+
+  const getExerciseName = (reward) => {
+    if (reward.exerciseId) {
+      return reward.exerciseId.title || '已删除的练习';
+    }
+    return '全局奖励';
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-white">奖励配置</h2>
+        <button
+          onClick={() => { setShowForm(true); setEditingReward(null); setFormData({
+            name: '',
+            description: '',
+            type: 'exercise_completion',
+            exerciseId: '',
+            coinsReward: 0,
+            isActive: true,
+            isRepeatable: false,
+            condition: { minAttempts: 0, maxTime: null }
+          }); }}
+          className="btn-primary flex items-center gap-2"
+        >
+          <Plus size={18} />
+          添加奖励
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="mb-6 p-4 bg-slate-700/50 rounded-lg space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-300 mb-2">奖励名称</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="input w-full"
+                required
+                placeholder="例如：完成练习奖励"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-300 mb-2">奖励类型</label>
+              <select
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                className="input w-full"
+              >
+                <option value="exercise_completion">完成练习奖励</option>
+                <option value="record_break">打破纪录奖励</option>
+                <option value="first_completion">首次完成奖励</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-300 mb-2">关联练习</label>
+            <select
+              value={formData.exerciseId}
+              onChange={(e) => setFormData({ ...formData, exerciseId: e.target.value })}
+              className="input w-full"
+            >
+              <option value="">全局奖励（所有练习）</option>
+              {typingExercises.map(ex => (
+                <option key={ex._id} value={ex._id}>{ex.title}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-slate-300 mb-2">金币奖励数量</label>
+              <input
+                type="number"
+                value={formData.coinsReward}
+                onChange={(e) => setFormData({ ...formData, coinsReward: parseInt(e.target.value) || 0 })}
+                className="input w-full"
+                min="0"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-slate-300 mb-2">最小尝试次数</label>
+              <input
+                type="number"
+                value={formData.condition.minAttempts}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  condition: { ...formData.condition, minAttempts: parseInt(e.target.value) || 0 }
+                })}
+                className="input w-full"
+                min="0"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-300 mb-2">最大时间限制(秒)</label>
+              <input
+                type="number"
+                value={formData.condition.maxTime || ''}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  condition: { ...formData.condition, maxTime: e.target.value ? parseInt(e.target.value) : null }
+                })}
+                className="input w-full"
+                min="0"
+                placeholder="留空表示无限制"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-300 mb-2">描述</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="input w-full"
+              rows={2}
+              placeholder="奖励说明..."
+            />
+          </div>
+
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-slate-300">
+              <input
+                type="checkbox"
+                checked={formData.isActive}
+                onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                className="rounded"
+              />
+              启用奖励
+            </label>
+            <label className="flex items-center gap-2 text-slate-300">
+              <input
+                type="checkbox"
+                checked={formData.isRepeatable}
+                onChange={(e) => setFormData({ ...formData, isRepeatable: e.target.checked })}
+                className="rounded"
+              />
+              可重复获得
+            </label>
+          </div>
+
+          <div className="flex gap-2">
+            <button type="submit" className="btn-primary">
+              {editingReward ? '更新' : '创建'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowForm(false); setEditingReward(null); }}
+              className="btn-secondary"
+            >
+              取消
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="space-y-3">
+        {rewards.length === 0 ? (
+          <div className="text-center py-12 text-slate-400">
+            暂无奖励配置
+          </div>
+        ) : (
+          rewards.map(reward => (
+            <div key={reward._id} className={clsx(
+              'p-4 rounded-lg border',
+              reward.isActive 
+                ? 'bg-slate-700/50 border-slate-600' 
+                : 'bg-slate-800/30 border-slate-700 opacity-60'
+            )}>
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-white font-bold">{reward.name}</h3>
+                    <span className={clsx(
+                      'px-2 py-0.5 rounded text-xs',
+                      reward.isActive 
+                        ? 'bg-green-500/20 text-green-400' 
+                        : 'bg-slate-600 text-slate-400'
+                    )}>
+                      {reward.isActive ? '启用' : '禁用'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-400">
+                      {getTypeName(reward.type)}
+                    </span>
+                    {reward.isRepeatable && (
+                      <span className="px-2 py-0.5 rounded text-xs bg-blue-500/20 text-blue-400">
+                        可重复
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-slate-400 space-y-1">
+                    <div>关联练习: {getExerciseName(reward)}</div>
+                    <div>金币奖励: <span className="text-yellow-400 font-bold">{reward.coinsReward}</span> 金币</div>
+                    {reward.condition?.minAttempts > 0 && (
+                      <div>最小尝试次数: {reward.condition.minAttempts} 次</div>
+                    )}
+                    {reward.condition?.maxTime && (
+                      <div>最大时间限制: {reward.condition.maxTime} 秒</div>
+                    )}
+                    {reward.description && (
+                      <div className="text-slate-500 mt-1">{reward.description}</div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleToggle(reward._id)}
+                    className={clsx(
+                      'px-3 py-1 rounded text-sm',
+                      reward.isActive 
+                        ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
+                        : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                    )}
+                  >
+                    {reward.isActive ? '禁用' : '启用'}
+                  </button>
+                  <button
+                    onClick={() => handleEdit(reward)}
+                    className="px-3 py-1 rounded text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    onClick={() => handleDelete(reward._id)}
+                    className="px-3 py-1 rounded text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                  >
+                    删除
+                  </button>
                 </div>
               </div>
             </div>

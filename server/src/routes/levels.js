@@ -3,6 +3,7 @@ const { auth, teacherOnly } = require('../middleware/auth');
 const { Level, LevelProgress } = require('../models/Level');
 const { TypingExercise, TypingResult } = require('../models/TypingExercise');
 const { OJProblem, OJSubmission } = require('../models/OJProblem');
+const { Reward } = require('../models/Shop');
 
 const router = express.Router();
 
@@ -49,14 +50,25 @@ const checkUnlockConditions = async (userId, conditions) => {
 router.get('/', auth, async (req, res) => {
   try {
     const levels = await Level.find({ isPublic: true }).sort({ order: 1 });
+    const userRole = req.user.role;
+
+    console.log('=== Levels API Debug ===');
+    console.log('User role:', userRole);
+    console.log('User assignedLevels:', req.user.assignedLevels);
+    console.log('assignedLevels type:', typeof req.user.assignedLevels);
+    console.log('assignedLevels length:', req.user.assignedLevels?.length);
 
     const levelsWithStatus = await Promise.all(levels.map(async (level) => {
-      const isAssigned = req.user.assignedLevels?.includes(level._id) || true;
+      const isAssigned = userRole === 'teacher' || 
+                         (req.user.assignedLevels && req.user.assignedLevels.length > 0 &&
+                          req.user.assignedLevels?.some(aid => aid.toString() === level._id.toString()));
       const isUnlocked = isAssigned && await checkUnlockConditions(req.user._id, level.unlockConditions);
       const progress = await LevelProgress.findOne({
         user: req.user._id,
         level: level._id
       });
+
+      console.log(`Level ${level.name}: isAssigned=${isAssigned}`);
 
       return {
         ...level.toObject(),
@@ -119,12 +131,20 @@ router.get('/:id', auth, async (req, res) => {
         status = userProgress >= 100 ? 'completed' : 'in_progress';
       }
 
+      const rewards = await Reward.find({
+        exerciseId: ex.exerciseId,
+        isActive: true
+      });
+      
+      const coinsReward = rewards.reduce((sum, reward) => sum + reward.coinsReward, 0);
+
       return {
         ...exerciseData.toObject(),
         type: ex.exerciseType,
         status,
         progress: userProgress,
-        isUnlocked: isExerciseUnlocked
+        isUnlocked: isExerciseUnlocked,
+        coinsReward
       };
     }));
 

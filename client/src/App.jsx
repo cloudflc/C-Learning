@@ -11,6 +11,7 @@ import TypingExercise from './pages/TypingExercise';
 import OJProblem from './pages/OJProblem';
 import Rankings from './pages/Rankings';
 import Profile from './pages/Profile';
+import Shop from './pages/Shop';
 import AdminDashboard from './pages/AdminDashboard';
 
 const ProtectedRoute = ({ children, role }) => {
@@ -39,13 +40,14 @@ const App = () => {
             <Layout />
           </ProtectedRoute>
         }>
-          <Route index element={<Home />} />
+          <Route path="/" element={<Home />} />
           <Route path="levels" element={<Levels />} />
           <Route path="levels/:id" element={<LevelDetail />} />
           <Route path="typing/:id" element={<TypingExercise />} />
           <Route path="oj/:id" element={<OJProblem />} />
           <Route path="rankings" element={<Rankings />} />
           <Route path="profile" element={<Profile />} />
+          <Route path="shop" element={<Shop />} />
           <Route path="admin" element={
             <ProtectedRoute role="teacher">
               <AdminDashboard />

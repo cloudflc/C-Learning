@@ -48,12 +48,36 @@ const updateLevelProgress = async (userId, exerciseId, exerciseType, progressVal
           }
         }).length;
 
+        const wasCompleted = progress.completed;
+        
         if (completedCount === allExercises.length) {
           progress.completed = true;
           progress.completedAt = new Date();
         }
 
         await progress.save();
+
+        if (!wasCompleted && progress.completed) {
+          const user = await User.findById(userId);
+          const levelStatusIndex = user.levelStatuses.findIndex(
+            ls => ls.levelId.toString() === level._id.toString()
+          );
+
+          if (levelStatusIndex !== -1) {
+            user.levelStatuses[levelStatusIndex].status = 'completed';
+            user.levelStatuses[levelStatusIndex].completedAt = new Date();
+          } else {
+            user.levelStatuses.push({
+              levelId: level._id,
+              status: 'completed',
+              unlockedAt: new Date(),
+              completedAt: new Date()
+            });
+          }
+
+          await user.save();
+        }
+
         break;
       }
     }
@@ -174,11 +198,8 @@ router.post('/:id/submit', auth, async (req, res) => {
     await submission.save();
 
     judgeCode(submission._id, problem).then(async (result) => {
-      submission.status = result.status;
-      submission.score = result.score;
-      submission.testResults = result.testResults;
-      submission.compileOutput = result.compileOutput;
-
+      const updatedSubmission = await OJSubmission.findById(submission._id);
+      
       let expEarned = 0;
       if (result.status === 'accepted') {
         expEarned = problem.expReward;
@@ -189,18 +210,21 @@ router.post('/:id/submit', auth, async (req, res) => {
         await calculateExp(req.user._id, expEarned);
       }
 
-      submission.expEarned = expEarned;
-      await submission.save();
+      updatedSubmission.expEarned = expEarned;
+      await updatedSubmission.save();
 
       const user = await User.findById(req.user._id);
       user.totalExercises += 1;
       await user.save();
     }).catch(async (error) => {
       console.error('Judge error:', error);
-      submission.status = 'runtime_error';
-      submission.score = 0;
-      submission.compileOutput = error.message;
-      await submission.save();
+      const updatedSubmission = await OJSubmission.findById(submission._id);
+      if (updatedSubmission) {
+        updatedSubmission.status = 'runtime_error';
+        updatedSubmission.score = 0;
+        updatedSubmission.compileOutput = error.message;
+        await updatedSubmission.save();
+      }
     });
 
     res.json({
@@ -277,7 +301,13 @@ router.get('/submission/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    res.json(submission);
+    const user = await User.findById(req.user._id);
+    
+    const response = submission.toObject();
+    response.totalExp = user.exp;
+    response.currentRank = user.rank;
+    
+    res.json(response);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

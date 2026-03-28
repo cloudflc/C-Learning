@@ -32,7 +32,7 @@ const Levels = () => {
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {levels.map((level) => (
+          {levels.filter(level => level.isAssigned).map((level) => (
             <Link
               key={level._id}
               to={level.isUnlocked ? `/levels/${level._id}` : '#'}
