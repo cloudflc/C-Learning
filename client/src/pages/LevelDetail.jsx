@@ -133,7 +133,7 @@ const LevelDetail = () => {
           {currentLevel.exercises?.map((exercise, index) => (
             <Link
               key={exercise._id}
-              to={exercise.isUnlocked ? `/${exercise.type}/${exercise._id}` : '#'}
+              to={exercise.isUnlocked ? `/${exercise.type}/${exercise._id}?levelId=${id}` : '#'}
               className={`card flex items-center justify-between transition-all hover:scale-[1.01] ${
                 !exercise.isUnlocked ? 'opacity-60' : ''
               }`}

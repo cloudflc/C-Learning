@@ -3,7 +3,7 @@ import { levelsAPI, typingAPI, ojAPI, usersAPI } from '../services/api';
 import api from '../services/api';
 import {
   Plus, Trash2, Edit, Keyboard, Code, Settings, Users,
-  ChevronRight, Save, X, Search, FolderPlus, UserPlus, Lock, Unlock, CheckCircle, Gift
+  ChevronRight, Save, X, Search, FolderPlus, UserPlus, Lock, Unlock, CheckCircle, Gift, ShoppingCart
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -79,6 +79,18 @@ const AdminDashboard = () => {
           <Gift size={18} />
           奖励配置
         </button>
+        <button
+          onClick={() => setActiveTab('shop')}
+          className={clsx(
+            'px-4 py-2 rounded-lg flex items-center gap-2 transition-colors',
+            activeTab === 'shop'
+              ? 'bg-primary-500/20 text-primary-400'
+              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+          )}
+        >
+          <ShoppingCart size={18} />
+          商品管理
+        </button>
       </div>
 
       {activeTab === 'levels' && <LevelManagement />}
@@ -86,6 +98,7 @@ const AdminDashboard = () => {
       {activeTab === 'oj' && <OJManagement />}
       {activeTab === 'students' && <StudentManagement />}
       {activeTab === 'rewards' && <RewardManagement />}
+      {activeTab === 'shop' && <ShopManagement />}
     </div>
   );
 };
@@ -1514,6 +1527,7 @@ const StudentManagement = () => {
 const RewardManagement = () => {
   const [rewards, setRewards] = useState([]);
   const [typingExercises, setTypingExercises] = useState([]);
+  const [ojProblems, setOjProblems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingReward, setEditingReward] = useState(null);
@@ -1522,6 +1536,7 @@ const RewardManagement = () => {
     description: '',
     type: 'exercise_completion',
     exerciseId: '',
+    ojProblemId: '',
     coinsReward: 0,
     isActive: true,
     isRepeatable: false,
@@ -1549,8 +1564,11 @@ const RewardManagement = () => {
 
   const loadExercises = async () => {
     try {
-      const res = await api.get('/typing');
-      setTypingExercises(res.data.exercises);
+      const typingRes = await api.get('/typing');
+      setTypingExercises(typingRes.data.exercises || []);
+      
+      const ojRes = await api.get('/oj');
+      setOjProblems(ojRes.data.problems || []);
     } catch (error) {
       console.error('加载练习失败', error);
     }
@@ -1559,11 +1577,17 @@ const RewardManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      const submitData = {
+        ...formData,
+        exerciseId: formData.exerciseId || null,
+        ojProblemId: formData.ojProblemId || null
+      };
+      
       if (editingReward) {
-        await api.put(`/rewards/${editingReward._id}`, formData);
+        await api.put(`/rewards/${editingReward._id}`, submitData);
         toast.success('奖励更新成功');
       } else {
-        await api.post('/rewards', formData);
+        await api.post('/rewards', submitData);
         toast.success('奖励创建成功');
       }
       setShowForm(false);
@@ -1573,6 +1597,7 @@ const RewardManagement = () => {
         description: '',
         type: 'exercise_completion',
         exerciseId: '',
+        ojProblemId: '',
         coinsReward: 0,
         isActive: true,
         isRepeatable: false,
@@ -1594,6 +1619,7 @@ const RewardManagement = () => {
       description: reward.description || '',
       type: reward.type,
       exerciseId: reward.exerciseId?._id || '',
+      ojProblemId: reward.ojProblemId?._id || '',
       coinsReward: reward.coinsReward,
       isActive: reward.isActive,
       isRepeatable: reward.isRepeatable,
@@ -1636,9 +1662,14 @@ const RewardManagement = () => {
     return typeNames[type] || type;
   };
 
+  const [rewardTargetType, setRewardTargetType] = useState('typing');
+
   const getExerciseName = (reward) => {
     if (reward.exerciseId) {
-      return reward.exerciseId.title || '已删除的练习';
+      return `打字练习: ${reward.exerciseId.title || '已删除的练习'}`;
+    }
+    if (reward.ojProblemId) {
+      return `OJ题目: ${reward.ojProblemId.title || '已删除的题目'}`;
     }
     return '全局奖励';
   };
@@ -1661,6 +1692,7 @@ const RewardManagement = () => {
             description: '',
             type: 'exercise_completion',
             exerciseId: '',
+            ojProblemId: '',
             coinsReward: 0,
             isActive: true,
             isRepeatable: false,
@@ -1684,7 +1716,7 @@ const RewardManagement = () => {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="input w-full"
                 required
-                placeholder="例如：完成练习奖励"
+                placeholder="例如：完成OJ题目奖励"
               />
             </div>
             <div>
@@ -1702,17 +1734,68 @@ const RewardManagement = () => {
           </div>
 
           <div>
-            <label className="block text-slate-300 mb-2">关联练习</label>
-            <select
-              value={formData.exerciseId}
-              onChange={(e) => setFormData({ ...formData, exerciseId: e.target.value })}
-              className="input w-full"
-            >
-              <option value="">全局奖励（所有练习）</option>
-              {typingExercises.map(ex => (
-                <option key={ex._id} value={ex._id}>{ex.title}</option>
-              ))}
-            </select>
+            <label className="block text-slate-300 mb-2">关联题目类型</label>
+            <div className="flex gap-4 mb-2">
+              <label className="flex items-center gap-2 text-slate-300">
+                <input
+                  type="radio"
+                  name="targetType"
+                  value="typing"
+                  checked={!formData.exerciseId && !formData.ojProblemId ? false : (formData.exerciseId && !formData.ojProblemId)}
+                  onChange={() => { setFormData({ ...formData, exerciseId: '', ojProblemId: '' }); }}
+                  className="rounded"
+                />
+                全局奖励（所有题目）
+              </label>
+              <label className="flex items-center gap-2 text-slate-300">
+                <input
+                  type="radio"
+                  name="targetType"
+                  value="typing"
+                  checked={!!formData.exerciseId}
+                  onChange={() => { setFormData({ ...formData, exerciseId: typingExercises[0]?._id || '', ojProblemId: '' }); }}
+                  className="rounded"
+                />
+                打字练习
+              </label>
+              <label className="flex items-center gap-2 text-slate-300">
+                <input
+                  type="radio"
+                  name="targetType"
+                  value="oj"
+                  checked={!!formData.ojProblemId}
+                  onChange={() => { setFormData({ ...formData, exerciseId: '', ojProblemId: ojProblems[0]?._id || '' }); }}
+                  className="rounded"
+                />
+                OJ题目
+              </label>
+            </div>
+            
+            {formData.exerciseId && !formData.ojProblemId && (
+              <select
+                value={formData.exerciseId}
+                onChange={(e) => setFormData({ ...formData, exerciseId: e.target.value, ojProblemId: '' })}
+                className="input w-full"
+              >
+                <option value="">选择打字练习...</option>
+                {typingExercises.map(ex => (
+                  <option key={ex._id} value={ex._id}>{ex.title}</option>
+                ))}
+              </select>
+            )}
+            
+            {formData.ojProblemId && !formData.exerciseId && (
+              <select
+                value={formData.ojProblemId}
+                onChange={(e) => setFormData({ ...formData, ojProblemId: e.target.value, exerciseId: '' })}
+                className="input w-full"
+              >
+                <option value="">选择OJ题目...</option>
+                {ojProblems.map(problem => (
+                  <option key={problem._id} value={problem._id}>{problem.title}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="grid md:grid-cols-3 gap-4">
@@ -1838,7 +1921,7 @@ const RewardManagement = () => {
                     )}
                   </div>
                   <div className="text-sm text-slate-400 space-y-1">
-                    <div>关联练习: {getExerciseName(reward)}</div>
+                    <div>关联题目: {getExerciseName(reward)}</div>
                     <div>金币奖励: <span className="text-yellow-400 font-bold">{reward.coinsReward}</span> 金币</div>
                     {reward.condition?.minAttempts > 0 && (
                       <div>最小尝试次数: {reward.condition.minAttempts} 次</div>
@@ -1876,6 +1959,319 @@ const RewardManagement = () => {
                     删除
                   </button>
                 </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ShopManagement = () => {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    price: 0,
+    type: 'badge',
+    imageUrl: '',
+    isActive: true,
+    stock: -1
+  });
+
+  useEffect(() => {
+    loadItems();
+  }, []);
+
+  const loadItems = async () => {
+    try {
+      const res = await api.get('/shop/items');
+      setItems(res.data);
+    } catch (error) {
+      toast.error('加载商品失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingItem) {
+        await api.put(`/shop/items/${editingItem._id}`, formData);
+        toast.success('商品更新成功');
+      } else {
+        await api.post('/shop/items', formData);
+        toast.success('商品创建成功');
+      }
+      setShowForm(false);
+      setEditingItem(null);
+      setFormData({
+        name: '',
+        description: '',
+        price: 0,
+        type: 'badge',
+        imageUrl: '',
+        isActive: true,
+        stock: -1
+      });
+      loadItems();
+    } catch (error) {
+      toast.error(error.response?.data?.message || '操作失败');
+    }
+  };
+
+  const handleEdit = (item) => {
+    setEditingItem(item);
+    setFormData({
+      name: item.name,
+      description: item.description || '',
+      price: item.price,
+      type: item.type,
+      imageUrl: item.imageUrl || '',
+      isActive: item.isActive,
+      stock: item.stock
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('确定要删除这个商品吗？')) return;
+    try {
+      await api.delete(`/shop/items/${id}`);
+      toast.success('商品删除成功');
+      loadItems();
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
+
+  const handleToggle = async (id) => {
+    try {
+      await api.post(`/shop/items/${id}/toggle`);
+      toast.success('状态更新成功');
+      loadItems();
+    } catch (error) {
+      toast.error('更新失败');
+    }
+  };
+
+  const getTypeIcon = (type) => {
+    const icons = {
+      badge: '🏅',
+      avatar: '👤',
+      title: '👑',
+      theme: '🎨'
+    };
+    return icons[type] || '📦';
+  };
+
+  const getTypeName = (type) => {
+    const names = {
+      badge: '徽章',
+      avatar: '头像',
+      title: '称号',
+      theme: '主题'
+    };
+    return names[type] || type;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-bold text-white">商品管理</h2>
+        <button
+          onClick={() => { setShowForm(true); setEditingItem(null); setFormData({
+            name: '',
+            description: '',
+            price: 0,
+            type: 'badge',
+            imageUrl: '',
+            isActive: true,
+            stock: -1
+          }); }}
+          className="btn-primary flex items-center gap-2"
+        >
+          <Plus size={18} />
+          添加商品
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="mb-6 p-4 bg-slate-700/50 rounded-lg space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-300 mb-2">商品名称</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="input w-full"
+                required
+                placeholder="例如：高级程序员徽章"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-300 mb-2">商品类型</label>
+              <select
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                className="input w-full"
+              >
+                <option value="badge">🏅 徽章</option>
+                <option value="avatar">👤 头像</option>
+                <option value="title">👑 称号</option>
+                <option value="theme">🎨 主题</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-300 mb-2">价格（金币）</label>
+              <input
+                type="number"
+                value={formData.price}
+                onChange={(e) => setFormData({ ...formData, price: parseInt(e.target.value) || 0 })}
+                className="input w-full"
+                min="0"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-slate-300 mb-2">库存（-1表示无限）</label>
+              <input
+                type="number"
+                value={formData.stock}
+                onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || -1 })}
+                className="input w-full"
+                min="-1"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-300 mb-2">图片URL（可选）</label>
+            <input
+              type="text"
+              value={formData.imageUrl}
+              onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+              className="input w-full"
+              placeholder="https://example.com/image.png"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-300 mb-2">描述</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="input w-full"
+              rows={2}
+              placeholder="商品描述..."
+            />
+          </div>
+
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-slate-300">
+              <input
+                type="checkbox"
+                checked={formData.isActive}
+                onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                className="rounded"
+              />
+              上架商品
+            </label>
+          </div>
+
+          <div className="flex gap-2">
+            <button type="submit" className="btn-primary">
+              {editingItem ? '更新' : '创建'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowForm(false); setEditingItem(null); }}
+              className="btn-secondary"
+            >
+              取消
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {items.length === 0 ? (
+          <div className="col-span-full text-center py-12 text-slate-400">
+            暂无商品
+          </div>
+        ) : (
+          items.map(item => (
+            <div key={item._id} className={clsx(
+              'p-4 rounded-lg border',
+              item.isActive 
+                ? 'bg-slate-700/50 border-slate-600' 
+                : 'bg-slate-800/30 border-slate-700 opacity-60'
+            )}>
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-12 h-12 rounded-lg bg-slate-700 flex items-center justify-center text-2xl">
+                  {getTypeIcon(item.type)}
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-white font-bold">{item.name}</h3>
+                  <div className="text-yellow-400 font-bold">{item.price} 金币</div>
+                </div>
+              </div>
+              <div className="text-sm text-slate-400 mb-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="px-2 py-0.5 rounded text-xs bg-blue-500/20 text-blue-400">
+                    {getTypeName(item.type)}
+                  </span>
+                  {item.stock === -1 ? (
+                    <span className="text-green-400">无限库存</span>
+                  ) : (
+                    <span className="text-slate-500">库存: {item.stock}</span>
+                  )}
+                </div>
+                {item.description && (
+                  <div className="text-slate-500 mt-1">{item.description}</div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleToggle(item._id)}
+                  className={clsx(
+                    'px-3 py-1 rounded text-xs flex-1',
+                    item.isActive 
+                      ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' 
+                      : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                  )}
+                >
+                  {item.isActive ? '下架' : '上架'}
+                </button>
+                <button
+                  onClick={() => handleEdit(item)}
+                  className="px-3 py-1 rounded text-xs bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                >
+                  编辑
+                </button>
+                <button
+                  onClick={() => handleDelete(item._id)}
+                  className="px-3 py-1 rounded text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                >
+                  删除
+                </button>
               </div>
             </div>
           ))

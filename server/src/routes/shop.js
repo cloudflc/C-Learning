@@ -65,7 +65,8 @@ router.post('/purchase/:itemId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Item is not available' });
     }
     
-    if (item.stock > 0 && item.stock !== -1) {
+    // 检查库存（stock === -1 表示无限库存，stock > 0 表示有限库存）
+    if (item.stock === 0) {
       return res.status(400).json({ message: 'Item is out of stock' });
     }
     
@@ -73,17 +74,16 @@ router.post('/purchase/:itemId', auth, async (req, res) => {
       return res.status(400).json({ message: 'Insufficient coins' });
     }
     
-    const existingPurchase = await Purchase.findOne({ 
-      user: req.user._id,
-      item: item._id 
-    });
-    
-    if (existingPurchase) {
-      return res.status(400).json({ message: 'Already purchased' });
-    }
+    // 允许重复购买，不再检查是否已购买
     
     user.coins -= item.price;
     await user.save();
+    
+    // 减少库存（如果是有限库存）
+    if (item.stock > 0) {
+      item.stock -= 1;
+      await item.save();
+    }
     
     const purchase = new Purchase({
       user: req.user._id,
@@ -91,7 +91,15 @@ router.post('/purchase/:itemId', auth, async (req, res) => {
     });
     await purchase.save();
     
-    res.json({ message: 'Purchase successful', coins: user.coins });
+    res.json({ 
+      message: 'Purchase successful', 
+      coins: user.coins,
+      user: {
+        coins: user.coins,
+        exp: user.exp,
+        level: user.level
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

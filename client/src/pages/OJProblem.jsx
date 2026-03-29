@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useOJStore, useAuthStore, useLevelStore } from '../stores';
 import ReactMarkdown from 'react-markdown';
 import { ArrowLeft, Send, FileText, Play, Check, X, Clock, MemoryStick, Terminal, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
@@ -11,6 +11,8 @@ import api from '../services/api';
 
 const OJProblem = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const levelId = searchParams.get('levelId');
   const navigate = useNavigate();
   const { currentProblem, fetchProblem, submitCode, runCode, submissions, fetchSubmissions, isLoading } = useOJStore();
   const { updateUser } = useAuthStore();
@@ -103,7 +105,7 @@ int main() {
     setIsSubmitting(true);
     setCurrentSubmission(null);
     try {
-      const response = await submitCode(id, { code, language: 'cpp' });
+      const response = await submitCode(id, { code, language: 'cpp', levelId });
       
       if (response.submissionId) {
         setCurrentSubmission({ _id: response.submissionId, status: 'pending' });

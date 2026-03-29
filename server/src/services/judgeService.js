@@ -5,9 +5,10 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 const TEMP_DIR = path.join(__dirname, '../../temp');
-const COMPILE_TIMEOUT = 10000;
+const COMPILE_TIMEOUT = 30000;
 const DEFAULT_TIME_LIMIT = 2000;
 const DEFAULT_MEMORY_LIMIT = 256 * 1024 * 1024;
+const GXX_PATH = process.platform === 'win32' ? 'C:\\msys64\\mingw64\\bin\\g++.exe' : 'g++';
 
 const ensureTempDir = async () => {
   try {
@@ -28,50 +29,147 @@ const cleanupFile = async (filePath) => {
 };
 
 const executeCommand = (command, options = {}) => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const timeout = options.timeout || 10000;
-    const killed = false;
+    
+    const env = {
+      ...process.env,
+      MSYS_NO_PATHCONV: '1',
+      MSYS2_ENV_CONV_EXCL: 'x',
+      PATH: process.env.PATH
+    };
     
     const proc = exec(command, {
       ...options,
-      maxBuffer: 1024 * 1024 * 10
+      maxBuffer: 1024 * 1024 * 10,
+      timeout: timeout,
+      env: env,
+      shell: process.platform === 'win32' ? 'C:\\Windows\\System32\\cmd.exe' : '/bin/bash'
     }, (error, stdout, stderr) => {
-      if (killed) return;
-      
       if (error) {
         if (error.killed) {
-          resolve({ stdout: '', stderr: '', timedOut: true, code: -1 });
+          resolve({ stdout: stdout || '', stderr: stderr || '', timedOut: true, code: -1 });
         } else {
-          resolve({ stdout, stderr, code: error.code || -1 });
+          resolve({ stdout: stdout || '', stderr: stderr || '', timedOut: false, code: error.code || -1 });
         }
       } else {
-        resolve({ stdout, stderr, code: 0 });
+        resolve({ stdout: stdout || '', stderr: stderr || '', timedOut: false, code: 0 });
       }
     });
 
     const timer = setTimeout(() => {
-      proc.kill('SIGKILL');
+      if (!proc.killed) {
+        proc.kill('SIGKILL');
+      }
     }, timeout);
 
     proc.on('close', () => {
       clearTimeout(timer);
     });
+    
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ stdout: '', stderr: err.message, timedOut: false, code: -1 });
+    });
   });
 };
 
 const compileCpp = async (sourcePath, outputPath, timeLimit = COMPILE_TIMEOUT) => {
-  const compileCommand = `g++ -std=c++17 -O2 -o "${outputPath}" "${sourcePath}" 2>&1`;
-  
-  const result = await executeCommand(compileCommand, { timeout: timeLimit });
-  
-  if (result.code !== 0) {
-    return {
-      success: false,
-      error: result.stderr || result.stdout || 'Compilation failed'
-    };
+  const gxx = GXX_PATH;
+
+  console.log('=== COMPILE DEBUG START ===');
+  console.log('GXX_PATH:', gxx);
+  console.log('sourcePath:', sourcePath);
+  console.log('outputPath:', outputPath);
+  console.log('timeLimit:', timeLimit);
+
+  try {
+    const stats = await fs.stat(sourcePath);
+    console.log('Source file exists:', stats.isFile());
+    console.log('Source file size:', stats.size, 'bytes');
+  } catch (err) {
+    console.log('Source file check error:', err.message);
+    return { success: false, error: `Source file not found: ${err.message}` };
   }
-  
-  return { success: true };
+
+  // 先删除旧的输出文件（如果存在）
+  try {
+    await fs.unlink(outputPath);
+  } catch (e) {
+    // 文件不存在，忽略错误
+  }
+
+  // 使用 PowerShell 调用 g++，但设置较短的超时时间（5 秒）
+  const psCommand = `& '${gxx}' -std=c++17 -O2 '${sourcePath}' -o '${outputPath}'`;
+  console.log('PowerShell command:', psCommand);
+
+  const result = await new Promise((resolve) => {
+    const proc = spawn('powershell.exe', ['-Command', psCommand], {
+      cwd: path.dirname(sourcePath),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: {
+        ...process.env,
+        MSYS_NO_PATHCONV: '1',
+        MSYS2_ENV_CONV_EXCL: 'x'
+      }
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    // 使用较短的超时时间（5 秒），因为 g++ 编译通常很快
+    const compileTimer = setTimeout(() => {
+      console.log('Compile timeout (5s) - checking if file exists');
+      proc.kill('SIGKILL');
+      resolve({ stdout, stderr, code: -1, timedOut: true });
+    }, 5000);
+
+    proc.on('close', (code) => {
+      clearTimeout(compileTimer);
+      console.log('close event, code:', code);
+      resolve({ stdout, stderr, code: code || 0, timedOut: false });
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(compileTimer);
+      console.log('error event:', err.message);
+      resolve({ stdout: '', stderr: err.message, code: -1, timedOut: false });
+    });
+  });
+
+  console.log('=== COMPILE RESULT ===');
+  console.log('result.code:', result.code);
+  console.log('result.stdout:', JSON.stringify(result.stdout));
+  console.log('result.stderr:', JSON.stringify(result.stderr));
+  console.log('result.timedOut:', result.timedOut);
+
+  // 检查输出文件是否存在且大小合理（即使超时，文件可能已生成）
+  try {
+    const outputStats = await fs.stat(outputPath);
+    console.log('Output file exists, size:', outputStats.size);
+    // 如果文件存在且大于 1KB，认为编译成功
+    if (outputStats.size > 1000) {
+      console.log('Compilation successful (file check)');
+      return { success: true };
+    }
+  } catch (e) {
+    console.log('Output file not found');
+  }
+
+  // 文件不存在或太小，返回错误
+  return {
+    success: false,
+    error: result.stderr || result.stdout || 'Compilation failed'
+  };
 };
 
 const runExecutable = async (executablePath, input, timeLimit, memoryLimit) => {
@@ -171,12 +269,18 @@ const executeCpp = async (code, stdin = '', timeLimit = DEFAULT_TIME_LIMIT, memo
   
   const uniqueId = uuidv4();
   const sourcePath = path.join(TEMP_DIR, `${uniqueId}.cpp`);
-  const executablePath = path.join(TEMP_DIR, uniqueId);
+  const executablePath = path.join(TEMP_DIR, `${uniqueId}.exe`);
+  
+  console.log('=== EXECUTE CPP DEBUG ===');
+  console.log('uniqueId:', uniqueId);
+  console.log('sourcePath:', sourcePath);
+  console.log('executablePath:', executablePath);
   
   try {
-    await fs.writeFile(sourcePath, code);
+    await fs.writeFile(sourcePath, code, { encoding: 'utf8' });
     
     const compileResult = await compileCpp(sourcePath, executablePath);
+    console.log('compileResult:', compileResult);
     
     if (!compileResult.success) {
       await cleanupFile(sourcePath);
@@ -213,12 +317,18 @@ const executeInSandbox = async (code, testCases, limits) => {
   
   const uniqueId = uuidv4();
   const sourcePath = path.join(TEMP_DIR, `${uniqueId}.cpp`);
-  const executablePath = path.join(TEMP_DIR, uniqueId);
+  const executablePath = path.join(TEMP_DIR, `${uniqueId}.exe`);
+  
+  console.log('=== SANDBOX DEBUG ===');
+  console.log('uniqueId:', uniqueId);
+  console.log('sourcePath:', sourcePath);
+  console.log('executablePath:', executablePath);
   
   try {
-    await fs.writeFile(sourcePath, code);
+    await fs.writeFile(sourcePath, code, { encoding: 'utf8' });
     
     const compileResult = await compileCpp(sourcePath, executablePath);
+    console.log('compileResult:', compileResult);
     
     if (!compileResult.success) {
       await cleanupFile(sourcePath);
@@ -365,5 +475,5 @@ async function executeCode(code, input, language) {
 
 module.exports = {
   judgeCode,
-  executeCode
+  executeCpp
 };

@@ -27,6 +27,7 @@ const ojProblemSchema = new mongoose.Schema({
 const ojSubmissionSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   problem: { type: mongoose.Schema.Types.ObjectId, ref: 'OJProblem' },
+  level: { type: mongoose.Schema.Types.ObjectId, ref: 'Level' },
   code: { type: String, required: true },
   language: { type: String, default: 'cpp' },
   status: {

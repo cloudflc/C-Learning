@@ -3,6 +3,7 @@ const { auth, teacherOnly } = require('../middleware/auth');
 const { OJProblem, OJSubmission } = require('../models/OJProblem');
 const { LevelProgress } = require('../models/Level');
 const User = require('../models/User');
+const { Reward, UserReward } = require('../models/Shop');
 const { calculateExp } = require('../services/expService');
 const { judgeCode } = require('../services/judgeService');
 
@@ -180,7 +181,7 @@ router.delete('/:id', auth, teacherOnly, async (req, res) => {
 
 router.post('/:id/submit', auth, async (req, res) => {
   try {
-    const { code, language } = req.body;
+    const { code, language, levelId } = req.body;
     const problem = await OJProblem.findById(req.params.id);
     
     if (!problem) {
@@ -190,6 +191,7 @@ router.post('/:id/submit', auth, async (req, res) => {
     const submission = new OJSubmission({
       user: req.user._id,
       problem: problem._id,
+      level: levelId || null,
       code,
       language: language || 'cpp',
       status: 'pending'
@@ -201,21 +203,60 @@ router.post('/:id/submit', auth, async (req, res) => {
       const updatedSubmission = await OJSubmission.findById(submission._id);
       
       let expEarned = 0;
+      let coinsEarned = 0;
+      
       if (result.status === 'accepted') {
         expEarned = problem.expReward;
         await calculateExp(req.user._id, expEarned);
         await updateLevelProgress(req.user._id, problem._id, 'oj', 100);
+        
+        const user = await User.findById(req.user._id);
+        if (user) {
+          user.totalExercises += 1;
+          
+          const rewards = await Reward.find({
+            ojProblemId: problem._id,
+            isActive: true
+          });
+          
+          for (const reward of rewards) {
+            const existingUserReward = await UserReward.findOne({
+              user: req.user._id,
+              reward: reward._id
+            });
+            
+            if (!existingUserReward || reward.isRepeatable) {
+              user.coins = (user.coins || 0) + reward.coinsReward;
+              coinsEarned += reward.coinsReward;
+              
+              const userReward = new UserReward({
+                user: req.user._id,
+                reward: reward._id
+              });
+              await userReward.save();
+              
+              console.log(`=== OJ REWARD GIVEN: ${reward.name} ===`);
+              console.log(`Coins: ${reward.coinsReward}`);
+            }
+          }
+          
+          await user.save();
+          console.log(`=== TOTAL OJ COINS EARNED: ${coinsEarned} ===`);
+        }
       } else if (result.score > 0) {
         expEarned = Math.floor(problem.expReward * (result.score / 100));
         await calculateExp(req.user._id, expEarned);
+        
+        const user = await User.findById(req.user._id);
+        if (user) {
+          user.totalExercises += 1;
+          await user.save();
+        }
       }
 
       updatedSubmission.expEarned = expEarned;
+      updatedSubmission.coinsEarned = coinsEarned;
       await updatedSubmission.save();
-
-      const user = await User.findById(req.user._id);
-      user.totalExercises += 1;
-      await user.save();
     }).catch(async (error) => {
       console.error('Judge error:', error);
       const updatedSubmission = await OJSubmission.findById(submission._id);
@@ -266,9 +307,9 @@ router.post('/:id/run', auth, async (req, res) => {
     console.log('code length:', code?.length);
     console.log('input:', testInput);
     
-    const { executeCode } = require('../services/judgeService');
+    const { executeCpp } = require('../services/judgeService');
     try {
-      const result = await executeCode(code, testInput, 'cpp');
+      const result = await executeCpp(code, testInput, problem.timeLimit, problem.memoryLimit);
       console.log('result:', result);
       
       res.json({
@@ -276,10 +317,11 @@ router.post('/:id/run', auth, async (req, res) => {
         output: result.output,
         error: result.error,
         time: result.time,
+        compileError: result.compileError,
         memory: result.memory
       });
     } catch (execError) {
-      console.error('executeCode error:', execError);
+      console.error('executeCpp error:', execError);
       res.status(500).json({ message: '运行失败', error: execError.message });
     }
   } catch (error) {

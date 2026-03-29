@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTypingStore, useAuthStore, useLevelStore } from '../stores';
 import ReactMarkdown from 'react-markdown';
 import { ArrowLeft, Heart, Clock, Send, RefreshCw, Lock, Check, ChevronRight } from 'lucide-react';
@@ -8,6 +8,8 @@ import clsx from 'clsx';
 
 const TypingExercise = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const levelId = searchParams.get('levelId');
   const navigate = useNavigate();
   const { currentExercise, exerciseProgress, startExercise, submitLine, resetProgress, isLoading } = useTypingStore();
   const { updateUser } = useAuthStore();
@@ -28,7 +30,7 @@ const TypingExercise = () => {
   const timerRef = useRef(null);
 
   useEffect(() => {
-    startExercise(id).then(data => {
+    startExercise(id, levelId).then(data => {
       if (data.exercise) {
         setHp(data.exercise.initialHp || 3);
         setTimeLeft(data.exercise.timeLimit || 0);
@@ -38,7 +40,7 @@ const TypingExercise = () => {
         setIsStarted(false);
       }
     });
-  }, [id]);
+  }, [id, levelId]);
 
   useEffect(() => {
     console.log('=== exerciseProgress CHANGED ===');
@@ -85,6 +87,7 @@ const TypingExercise = () => {
     console.log('hp:', hp);
     console.log('userInput:', userInput);
     console.log('exerciseProgress:', exerciseProgress);
+    console.log('timeLeft:', timeLeft);
     
     if (isSubmitting || !isStarted || !currentExercise) {
       console.log('EARLY RETURN: isSubmitting || !isStarted || !currentExercise');
@@ -93,6 +96,11 @@ const TypingExercise = () => {
     if (hp <= 0) {
       console.log('EARLY RETURN: hp <= 0');
       toast.error('生命值已耗尽，请重新开始');
+      return;
+    }
+    if (timeLeft <= 0) {
+      console.log('EARLY RETURN: timeLeft <= 0');
+      toast.error('时间已耗尽，请重新挑战');
       return;
     }
     
@@ -119,7 +127,8 @@ const TypingExercise = () => {
         lineNumber: currentLine,
         submittedContent: userInput,
         hpRemaining: hp,
-        timeSpent
+        timeSpent,
+        levelId
       });
 
       console.log('=== RESPONSE RECEIVED ===');
@@ -159,6 +168,16 @@ const TypingExercise = () => {
           
           toast.success(completionMessage);
           setIsStarted(false);
+          
+          if (response.coinsEarned > 0) {
+            const currentCoins = useAuthStore.getState().user?.coins || 0;
+            const newCoins = currentCoins + response.coinsEarned;
+            updateUser({ coins: newCoins });
+            console.log('=== COINS UPDATED ===');
+            console.log('Previous coins:', currentCoins);
+            console.log('Coins earned:', response.coinsEarned);
+            console.log('New coins:', newCoins);
+          }
         } else {
           toast.success('正确！进入下一行');
           setUserInput('');
@@ -330,7 +349,7 @@ const TypingExercise = () => {
             )}
           </div>
 
-          {isStarted && !result?.isCompleted && currentQuestion && (
+          {isStarted && !result?.isCompleted && timeLeft > 0 && currentQuestion && (
             <div className={clsx(
               'card transition-all',
               shake && 'animate-shake border-red-500'
@@ -458,6 +477,26 @@ const TypingExercise = () => {
                 <span className="text-slate-400">经验奖励</span>
                 <span className="text-primary-400">+{currentExercise.expReward} EXP</span>
               </div>
+              {exerciseProgress && (
+                <>
+                  <div className="border-t border-slate-700 pt-2 mt-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">总挑战次数</span>
+                      <span className="text-white">{exerciseProgress.totalAttempts || 0} 次</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">成功完成次数</span>
+                      <span className="text-green-400">{exerciseProgress.successfulAttempts || 0} 次</span>
+                    </div>
+                    {exerciseProgress.bestTimes && exerciseProgress.bestTimes.length > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">最短用时</span>
+                        <span className="text-yellow-400">{exerciseProgress.bestTimes[0]} 秒</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

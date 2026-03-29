@@ -256,6 +256,7 @@ router.delete('/:id', auth, teacherOnly, async (req, res) => {
 
 router.post('/:id/start', auth, async (req, res) => {
   try {
+    const { levelId } = req.body;
     const exercise = await TypingExercise.findById(req.params.id);
     if (!exercise) {
       return res.status(404).json({ message: 'Exercise not found' });
@@ -263,13 +264,15 @@ router.post('/:id/start', auth, async (req, res) => {
 
     let result = await TypingResult.findOne({
       user: req.user._id,
-      exercise: exercise._id
+      exercise: exercise._id,
+      level: levelId || null
     });
 
     if (!result) {
       result = new TypingResult({
         user: req.user._id,
         exercise: exercise._id,
+        level: levelId || null,
         completedLines: 0,
         totalLines: exercise.questions.length,
         isCompleted: false,
@@ -287,6 +290,7 @@ router.post('/:id/start', auth, async (req, res) => {
     console.log('=== START EXERCISE ===');
     console.log('result.completedLines:', result.completedLines);
     console.log('result.isCompleted:', result.isCompleted);
+    console.log('levelId:', levelId);
 
     res.json({
       exercise: {
@@ -319,7 +323,7 @@ router.post('/:id/start', auth, async (req, res) => {
 router.post('/:id/submit-line', auth, async (req, res) => {
   try {
     console.log('=== SUBMIT-LINE ROUTE START ===');
-    const { lineNumber, submittedContent, hpRemaining, timeSpent } = req.body;
+    const { lineNumber, submittedContent, hpRemaining, timeSpent, levelId } = req.body;
     const exercise = await TypingExercise.findById(req.params.id);
     
     console.log('=== SUBMIT DEBUG ===');
@@ -329,6 +333,7 @@ router.post('/:id/submit-line', auth, async (req, res) => {
     console.log('submittedContent length:', submittedContent?.length);
     console.log('hpRemaining:', hpRemaining);
     console.log('timeSpent:', timeSpent);
+    console.log('levelId:', levelId);
     console.log('exercise._id:', exercise?._id);
     console.log('exercise.questions count:', exercise?.questions?.length);
     console.log('exercise.questions:', exercise?.questions?.map(q => ({ lineNumber: q.lineNumber, answer: q.answer })));
@@ -347,13 +352,15 @@ router.post('/:id/submit-line', auth, async (req, res) => {
 
     let result = await TypingResult.findOne({
       user: req.user._id,
-      exercise: exercise._id
+      exercise: exercise._id,
+      level: levelId || null
     });
 
     if (!result) {
       result = new TypingResult({
         user: req.user._id,
         exercise: exercise._id,
+        level: levelId || null,
         completedLines: 0,
         totalLines: exercise.questions.length,
         isCompleted: false
@@ -406,6 +413,9 @@ router.post('/:id/submit-line', auth, async (req, res) => {
         try {
           const user = await User.findById(req.user._id);
           if (user) {
+            console.log('=== PROCESSING REWARDS ===');
+            console.log('user._id:', user._id);
+            console.log('user.currentCoins before:', user.coins);
             user.totalExercises += 1;
             
             const rewards = await Reward.find({
@@ -413,19 +423,25 @@ router.post('/:id/submit-line', auth, async (req, res) => {
               isActive: true
             });
             
+            console.log('Found rewards count:', rewards.length);
+            console.log('Rewards:', rewards);
+            
             for (const reward of rewards) {
               let shouldGiveReward = false;
               
               if (reward.type === 'first_completion' && isFirstCompletion) {
                 shouldGiveReward = true;
+                console.log(`Reward ${reward.name}: isFirstCompletion=${isFirstCompletion}, giving reward`);
               } else if (reward.type === 'record_break' && isNewRecord) {
                 if (reward.condition?.maxTime && timeSpent <= reward.condition.maxTime) {
                   shouldGiveReward = true;
                 } else if (!reward.condition?.maxTime) {
                   shouldGiveReward = true;
                 }
+                console.log(`Reward ${reward.name}: isNewRecord=${isNewRecord}, timeSpent=${timeSpent}, maxTime=${reward.condition?.maxTime}, giving reward=${shouldGiveReward}`);
               } else if (reward.type === 'exercise_completion') {
                 shouldGiveReward = true;
+                console.log(`Reward ${reward.name}: is exercise_completion, giving reward`);
               }
               
               if (shouldGiveReward) {
@@ -433,6 +449,8 @@ router.post('/:id/submit-line', auth, async (req, res) => {
                   user: req.user._id,
                   reward: reward._id
                 });
+                
+                console.log(`Existing user reward:`, existingUserReward);
                 
                 if (!existingUserReward || reward.isRepeatable) {
                   user.coins = (user.coins || 0) + reward.coinsReward;
@@ -446,12 +464,16 @@ router.post('/:id/submit-line', auth, async (req, res) => {
                   
                   console.log(`=== REWARD GIVEN: ${reward.name} ===`);
                   console.log(`Coins: ${reward.coinsReward}`);
+                  console.log(`user.coins after: ${user.coins}`);
+                } else {
+                  console.log(`User already has reward: ${reward.name}, skipping`);
                 }
               }
             }
             
             await user.save();
             console.log(`=== TOTAL COINS EARNED: ${totalCoinsEarned} ===`);
+            console.log(`=== USER COINS AFTER SAVE: ${user.coins} ===`);
           }
           
           await updateLevelProgress(req.user._id, exercise._id, 'typing', 100);

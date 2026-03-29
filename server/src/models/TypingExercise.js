@@ -27,6 +27,7 @@ const typingExerciseSchema = new mongoose.Schema({
 const typingResultSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   exercise: { type: mongoose.Schema.Types.ObjectId, ref: 'TypingExercise' },
+  level: { type: mongoose.Schema.Types.ObjectId, ref: 'Level' },
   completedLines: { type: Number, default: 0 },
   totalLines: { type: Number, default: 0 },
   isCompleted: { type: Boolean, default: false },

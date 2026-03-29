@@ -44,7 +44,12 @@ export const useAuthStore = create(
       },
       
       updateUser: (userData) => {
-        set({ user: { ...get().user, ...userData } });
+        const currentState = get();
+        if (!currentState.user) {
+          set({ user: userData });
+        } else {
+          set({ user: { ...currentState.user, ...userData } });
+        }
       },
       
       refreshUser: async () => {
@@ -135,9 +140,9 @@ export const useTypingStore = create((set, get) => ({
     }
   },
   
-  startExercise: async (id) => {
+  startExercise: async (id, levelId) => {
     try {
-      const response = await api.post(`/typing/${id}/start`);
+      const response = await api.post(`/typing/${id}/start`, { levelId });
       set({ 
         currentExercise: response.data.exercise, 
         exerciseProgress: response.data.result 
@@ -166,7 +171,12 @@ export const useTypingStore = create((set, get) => ({
           completedLines: response.data.completedLines ?? 0,
           totalLines: response.data.totalLines ?? 0,
           isCompleted: response.data.isCompleted ?? false,
-          expEarned: response.data.expEarned ?? 0
+          expEarned: response.data.expEarned ?? 0,
+          totalAttempts: response.data.totalAttempts ?? 0,
+          successfulAttempts: response.data.successfulAttempts ?? 0,
+          bestTimes: response.data.bestTimes ?? [],
+          isNewRecord: response.data.isNewRecord ?? false,
+          coinsEarned: response.data.coinsEarned ?? 0
         }
       });
       
@@ -175,7 +185,10 @@ export const useTypingStore = create((set, get) => ({
         completedLines: response.data.completedLines ?? 0,
         totalLines: response.data.totalLines ?? 0,
         isCompleted: response.data.isCompleted ?? false,
-        expEarned: response.data.expEarned ?? 0
+        expEarned: response.data.expEarned ?? 0,
+        totalAttempts: response.data.totalAttempts ?? 0,
+        successfulAttempts: response.data.successfulAttempts ?? 0,
+        bestTimes: response.data.bestTimes ?? []
       });
       
       return response.data;
