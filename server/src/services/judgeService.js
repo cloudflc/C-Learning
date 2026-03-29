@@ -82,6 +82,7 @@ const compileCpp = async (sourcePath, outputPath, timeLimit = COMPILE_TIMEOUT) =
   console.log('sourcePath:', sourcePath);
   console.log('outputPath:', outputPath);
   console.log('timeLimit:', timeLimit);
+  console.log('Platform:', process.platform);
 
   try {
     const stats = await fs.stat(sourcePath);
@@ -99,21 +100,34 @@ const compileCpp = async (sourcePath, outputPath, timeLimit = COMPILE_TIMEOUT) =
     // 文件不存在，忽略错误
   }
 
-  // 使用 PowerShell 调用 g++，但设置较短的超时时间（5 秒）
-  const psCommand = `& '${gxx}' -std=c++17 -O2 '${sourcePath}' -o '${outputPath}'`;
-  console.log('PowerShell command:', psCommand);
-
   const result = await new Promise((resolve) => {
-    const proc = spawn('powershell.exe', ['-Command', psCommand], {
-      cwd: path.dirname(sourcePath),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-      env: {
-        ...process.env,
-        MSYS_NO_PATHCONV: '1',
-        MSYS2_ENV_CONV_EXCL: 'x'
-      }
-    });
+    let proc;
+    
+    if (process.platform === 'win32') {
+      // Windows: 使用 PowerShell 调用 g++
+      const psCommand = `& '${gxx}' -std=c++17 -O2 '${sourcePath}' -o '${outputPath}'`;
+      console.log('PowerShell command:', psCommand);
+      
+      proc = spawn('powershell.exe', ['-Command', psCommand], {
+        cwd: path.dirname(sourcePath),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+        env: {
+          ...process.env,
+          MSYS_NO_PATHCONV: '1',
+          MSYS2_ENV_CONV_EXCL: 'x'
+        }
+      });
+    } else {
+      // Linux/Mac: 直接调用 g++
+      console.log('Compile command:', `${gxx} -std=c++17 -O2 '${sourcePath}' -o '${outputPath}'`);
+      
+      proc = spawn(gxx, ['-std=c++17', '-O2', sourcePath, '-o', outputPath], {
+        cwd: path.dirname(sourcePath),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: process.env
+      });
+    }
 
     let stdout = '';
     let stderr = '';
